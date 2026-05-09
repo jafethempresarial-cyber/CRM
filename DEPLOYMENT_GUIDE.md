@@ -1,6 +1,11 @@
-# Enterprise AI CRM: Deployment & Demo Guide
+# Enterprise AI CRM: Deployment & Demo Guide ($0 Stack)
 
-This guide ensures your $0 infrastructure is solid for the pilot.
+This architecture is designed for maximum performance with **zero hosting costs**.
+
+### The $0 Trifecta:
+*   **Frontend:** [Vercel](https://vercel.com) (React/Vite)
+*   **Database:** [Supabase](https://supabase.com) (Postgres)
+*   **Backend Tunnel:** [Ngrok](https://ngrok.com) (Powered by your local RTX 3060)
 
 ## 1. Environment Setup (Local Machine)
 1.  **Groq:** Open `server/.env` and paste your `gsk_...` key.
