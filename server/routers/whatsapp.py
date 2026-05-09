@@ -42,80 +42,84 @@ async def delayed_auto_send(msg_id: int, delay_minutes: int):
         finally:
             await db.close()
 
+async def _handle_status_update(db: AsyncSession, wamid: str, new_status: str, phone: str = None):
+    """Helper to update message status and broadcast to dashboard."""
+    result = await db.execute(select(Message).filter(Message.external_id == wamid))
+    msg = result.scalars().first()
+    if msg:
+        msg.status = new_status
+        await db.commit()
+        
+        # Broadcast status update to dashboard
+        await manager.broadcast(json.dumps({
+            "type": "message_status_update",
+            "id": msg.id,
+            "status": new_status,
+            "phone": phone or msg.conversation.client.phone_number
+        }))
+    return {"status": "ok"}
+
 @router.post("/webhook")
 async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_async_db)):
     raw_data = await request.json()
     
-    # 1. Detect Payload Type (Meta Production vs Simulator)
+    # 1. Detect Payload Type (Meta vs Evolution vs Simulator)
     is_meta = raw_data.get("object") == "whatsapp_business_account"
+    is_evolution = raw_data.get("event") is not None and raw_data.get("instance") is not None
     
+    sender_phone = "unknown"
+    message_content = ""
+    external_id = None
+    profile_name = None
+    media_url = None
+    media_type = None
+
     if is_meta:
-        # Process Meta Production Payload
         try:
             value = raw_data["entry"][0]["changes"][0]["value"]
-            
-            # 1.1 Handle Status Updates (Read/Delivered)
             if "statuses" in value:
                 status_data = value["statuses"][0]
-                wamid = status_data["id"]
-                new_status = status_data["status"] # "delivered", "read", "sent", "failed"
-                
-                logger.info(f"META STATUS UPDATE: {wamid} -> {new_status}")
-                
-                result = await db.execute(select(Message).filter(Message.external_id == wamid))
-                msg = result.scalars().first()
-                if msg:
-                    msg.status = new_status
-                    await db.commit()
-                    
-                    # Broadcast status update to dashboard
-                    await manager.broadcast(json.dumps({
-                        "type": "message_status_update",
-                        "id": msg.id,
-                        "status": new_status,
-                        "phone": msg.conversation.client.phone_number
-                    }))
-                return {"status": "ok"}
-
-            # 1.2 Handle Incoming Messages
+                return await _handle_status_update(db, status_data["id"], status_data["status"])
+            
             if "messages" in value:
                 msg_data = value["messages"][0]
                 sender_phone = msg_data["from"]
                 message_content = msg_data.get("text", {}).get("body", "")
                 external_id = msg_data["id"]
-                media_url = None
-                media_type = None
-                
-                # Extract profile name if available
-                profile_name = value.get("contacts", [{}])[0].get("profile", {}).get("name")
-                
-                # Check for media (Simplified)
+                profile_name = raw_data.get("contacts", [{}])[0].get("profile", {}).get("name")
                 if msg_data["type"] != "text":
                     media_type = msg_data["type"]
-                    # Meta requires a separate API call to get the media URL from the media ID
-                    # For now, we'll store the media_id in media_url as a placeholder
                     media_url = msg_data.get(media_type, {}).get("id")
                     message_content = f"[{media_type.upper()} ATTACHMENT]"
-            else:
-                return {"status": "ok", "detail": "not a message or status"}
-        except (KeyError, IndexError):
-            # Fallback for simulator if it sends object="whatsapp_business_account" but flat structure
-            message_content = raw_data.get("message", "")
-            sender_phone = raw_data.get("sender", "unknown")
-            external_id = raw_data.get("id")
-            media_url = raw_data.get("media_url")
-            media_type = raw_data.get("media_type")
-            profile_name = None
+        except: return {"status": "error", "detail": "Meta payload parsing failed"}
+        
+    elif is_evolution:
+        event_type = raw_data.get("event")
+        data = raw_data.get("data", {})
+        if event_type == "messages.upsert":
+            sender_phone = data.get("key", {}).get("remoteJid", "").split("@")[0]
+            message_content = data.get("message", {}).get("conversation", "") or data.get("message", {}).get("extendedTextMessage", {}).get("text", "")
+            external_id = data.get("key", {}).get("id")
+            profile_name = data.get("pushName")
+        elif event_type == "messages.update":
+            # Handle status updates from Evolution
+            status_map = {2: "sent", 3: "delivered", 4: "read"}
+            status_code = data.get("status")
+            if status_code in status_map:
+                return await _handle_status_update(db, data.get("key", {}).get("id"), status_map[status_code])
+            return {"status": "ok"}
+        else:
+            return {"status": "ok", "detail": f"Evolution event {event_type} ignored"}
+            
     else:
-        # Process Simulator/Mock Payload (Backward Compatibility)
+        # Simulator / Mock
         message_content = raw_data.get("message", "")
         sender_phone = raw_data.get("sender", "unknown")
-        external_id = raw_data.get("id") # Optional wamid for testing
+        external_id = raw_data.get("id") or f"sim_{int(time.time())}"
         media_url = raw_data.get("media_url")
         media_type = raw_data.get("media_type")
-        profile_name = None
 
-    logger.info(f"Processing message from {sender_phone}: {message_content[:50]}...")
+    # Proceed with saving the message...
     
     # 2. Find or create Client
     result = await db.execute(select(Client).filter(Client.phone_number == sender_phone))

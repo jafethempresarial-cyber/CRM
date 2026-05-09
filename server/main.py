@@ -12,7 +12,7 @@ import sys
 logger = setup_logger("main")
 
 # CORS Configurations
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 
 # Create tables
 try:
@@ -43,7 +43,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="WhatsApp AI Dashboard", lifespan=lifespan)
 
-
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from services.licensing import LicensingService
@@ -51,13 +50,23 @@ from sqlalchemy import select
 from database import SessionLocal
 from models import AIConfig
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Flexible CORS for Pilot/Demo
+if "*" in ALLOWED_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=".*", # Allow everything for Pilot convenience
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 @app.middleware("http")
 async def license_enforcer(request: Request, call_next):

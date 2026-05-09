@@ -2,11 +2,11 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.env
+.env.local
+.env.*
 .venv/
 venv/
-ENV/
-env/
-.env
 
 # Node.js
 node_modules/

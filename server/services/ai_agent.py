@@ -1,4 +1,4 @@
-import openai
+from openai import AsyncOpenAI
 import os
 import json
 import time
@@ -19,15 +19,39 @@ from services.metrics import (
 
 logger = setup_logger("ai_agent")
 
-# OpenAI configuration is now dynamic per request
-# openai.api_key = os.getenv("OPENAI_API_KEY", "lm-studio")
-# openai.api_base = os.getenv("OPENAI_API_BASE", "http://localhost:1234/v1")
-
 class AIAgent:
     def __init__(self):
         self.context = {}
+        self.fallback_msg = "Lo siento, no pude procesar esa solicitud en este momento. ¿Hay algo más en lo que pueda ayudarte?"
+
+    async def _get_client(self, config):
+        """
+        Initialize the AsyncOpenAI client dynamically per request based on config.
+        """
+        api_key = config.get("openai_api_key") or os.getenv("OPENAI_API_KEY", "lm-studio")
+        api_base = config.get("openai_api_base") or os.getenv("OPENAI_API_BASE", "http://localhost:1234/v1")
+
+        # Docker networking fix: 
+        # If running in Docker and pointing to localhost, use host.docker.internal instead
+        if api_base:
+            is_local = "localhost" in api_base or "127.0.0.1" in api_base
+            if is_local and (os.path.exists("/.dockerenv") or os.getenv("RUNNING_IN_DOCKER") == "true"):
+                api_base = api_base.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal")
+                logger.info(f"Docker Network Fix: Translated API base to {api_base}")
+
+        # Normalize API Base URL (ensure it ends with / for consistency)
+        if api_base and not api_base.endswith("/"):
+            api_base += "/"
+
+        return AsyncOpenAI(
+            api_key=api_key,
+            base_url=api_base,
+            timeout=60.0
+        )
 
     async def _get_active_config(self, db: AsyncSession):
+# ... (rest of the _get_active_config and other helper methods remain the same)
+# Skipping lines for brevity in this view, applying to the whole file below
         if not db:
             return self._default_config()
             
@@ -284,32 +308,17 @@ class AIAgent:
                 }
         
         try:
-            # 9. LLM Call (Non-blocking acreate)
+            # 9. LLM Call (Modern AsyncOpenAI)
+            client = await self._get_client(config)
             preferred_model = config.get("preferred_model", "gpt-4-turbo")
             
-            # Use provided keys or fall back to global
-            api_key = config.get("openai_api_key") or openai.api_key
-            api_base = config.get("openai_api_base") or openai.api_base
-
-            # Docker networking fix: 
-            # If running in Docker and pointing to localhost, use host.docker.internal instead
-            if api_base:
-                is_local = "localhost" in api_base or "127.0.0.1" in api_base
-                # We can detect docker by env var or presence of /.dockerenv
-                if is_local and (os.path.exists("/.dockerenv") or os.getenv("RUNNING_IN_DOCKER") == "true"):
-                    api_base = api_base.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal")
-                    logger.info(f"Docker Network Fix: Translated API base to {api_base}")
-
-            response = await openai.ChatCompletion.acreate(
+            response = await client.chat.completions.create(
                 model=preferred_model, 
                 messages=messages,
-                temperature=0.3, 
-                api_key=api_key,
-                api_base=api_base,
-                request_timeout=60 # Increased for local LLM inference
+                temperature=0.3
             )
             
-            content = response.choices[0].message["content"]
+            content = response.choices[0].message.content
             
             # Clean markdown code blocks
             if "```json" in content:
@@ -331,7 +340,7 @@ class AIAgent:
                     "confidence_self_assessment": 50
                 }
 
-            reply_text = raw_result.get("reply", fallback_msg)
+            reply_text = raw_result.get("reply", self.fallback_msg)
             is_out_of_kb = raw_result.get("is_out_of_knowledge", False)
             primary_intent = raw_result.get("primary_intent", "General")
             domain = raw_result.get("domain", "Commercial/Logistics")
@@ -514,7 +523,7 @@ class AIAgent:
                 audit = SecurityAudit(
                     client_id=str(client_id),
                     input_message=user_message,
-                    output_message=fallback_msg,
+                    output_message=self.fallback_msg,
                     status=status,
                     latency_ms=latency_ms,
                     reasoning=str(e)
@@ -523,7 +532,7 @@ class AIAgent:
                 await db.commit()
                 
             return {
-                "content": fallback_msg,
+                "content": self.fallback_msg,
                 "confidence": 0,
                 "metadata": {
                     "intent": "system_error",

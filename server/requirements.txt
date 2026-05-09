@@ -1,6 +1,6 @@
-fastapi>=0.100.0
-uvicorn
-openai==0.28.1
+fastapi>=0.109.0
+uvicorn[standard]
+openai>=1.0.0
 python-dotenv
 requests
 passlib[bcrypt]
@@ -8,8 +8,9 @@ python-multipart
 python-jose[cryptography]
 httpx
 pytest
-sqlalchemy>=2.0.0
-pydantic>=2.0.0
+pytest-asyncio
+sqlalchemy>=2.0.25
+pydantic>=2.5.0
 aiosqlite
 cryptography
 celery
@@ -17,3 +18,4 @@ redis
 prometheus_client
 websockets
 pyjwt==2.8.0
+greenlet
