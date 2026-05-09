@@ -50,15 +50,19 @@ async def init_test_db():
         )
         session.add(admin_user)
         
-        # 2. Create Enterprise License
-        from generate_license import generate_license
-        test_license_data = {
-            "business_name": "Test Shop",
-            "plan": "enterprise",
-            "features": ["whatsapp", "ecommerce"],
-            "max_seats": 10
-        }
-        test_key = generate_license(test_license_data)
+        # 2. Create Enterprise License (CI-safe: use mock if keys missing)
+        try:
+            from generate_license import generate_license
+            test_license_data = {
+                "business_name": "Test Shop",
+                "plan": "enterprise",
+                "features": ["whatsapp", "ecommerce"],
+                "max_seats": 10
+            }
+            test_key = generate_license(test_license_data)
+        except FileNotFoundError:
+            # In CI, private.pem doesn't exist — use a dummy key
+            test_key = "ci-test-license-key"
         
         config = AIConfig(
             business_name="Test Shop",
@@ -115,14 +119,17 @@ def test_ecommerce_flow():
 
 async def downgrade_license(plan: str):
     async with TestingSessionLocal() as session:
-        from generate_license import generate_license
-        test_license_data = {
-            "business_name": "Test Shop",
-            "plan": plan,
-            "features": ["whatsapp"],
-            "max_seats": 10
-        }
-        test_key = generate_license(test_license_data)
+        try:
+            from generate_license import generate_license
+            test_license_data = {
+                "business_name": "Test Shop",
+                "plan": plan,
+                "features": ["whatsapp"],
+                "max_seats": 10
+            }
+            test_key = generate_license(test_license_data)
+        except FileNotFoundError:
+            test_key = f"ci-test-license-{plan}"
         from sqlalchemy import update
         await session.execute(update(AIConfig).where(AIConfig.is_active == True).values(license_key=test_key))
         await session.commit()

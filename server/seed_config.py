@@ -4,6 +4,12 @@ from database import AsyncSessionLocal, engine, Base
 from models import AIConfig, Client, Conversation
 
 async def seed_data():
+    # Ensure all tables exist before seeding
+    from sqlalchemy.ext.asyncio import create_async_engine as _cae
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    print("✅ Database tables verified.")
+
     async with AsyncSessionLocal() as db:
         from sqlalchemy import select
         

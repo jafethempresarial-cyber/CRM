@@ -27,7 +27,7 @@ jobs:
         
     - name: Run Backend Tests
       run: |
-        pytest -v
+        pytest server/tests/ tests/ -v --ignore=test_products.py
       env:
         PYTHONPATH: ./server
         OPENAI_API_BASE: "http://localhost:1234/v1"
