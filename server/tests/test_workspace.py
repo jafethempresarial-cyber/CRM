@@ -35,8 +35,12 @@ async def override_get_async_db():
 def override_get_admin_user():
     return User(id=1, username="admin", role="admin", is_active=True)
 
-app.dependency_overrides[get_async_db] = override_get_async_db
-app.dependency_overrides[get_admin_user] = override_get_admin_user
+@pytest.fixture(autouse=True)
+def setup_overrides():
+    app.dependency_overrides[get_async_db] = override_get_async_db
+    app.dependency_overrides[get_admin_user] = override_get_admin_user
+    yield
+    app.dependency_overrides.clear()
 
 client = TestClient(app)
 
