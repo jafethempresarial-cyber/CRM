@@ -11,6 +11,7 @@ import os
 # We don't need sys.path hack if PYTHONPATH is set, but helpful for local:
 sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
 os.environ["TESTING"] = "true"
+os.environ["DEV_MODE"] = "false"
 
 from main import app
 from database import Base, get_async_db
@@ -34,6 +35,11 @@ async def override_get_async_db():
 # Mock Admin User
 def override_get_admin_user():
     return User(id=1, username="admin", role="admin", is_active=True)
+
+@pytest.fixture(autouse=True)
+def force_no_dev_mode(monkeypatch):
+    monkeypatch.setenv("DEV_MODE", "false")
+    monkeypatch.setenv("TESTING", "true")
 
 @pytest.fixture(autouse=True)
 def setup_overrides():

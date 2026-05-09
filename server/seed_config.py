@@ -1,14 +1,14 @@
 import asyncio
 import json
-from database import AsyncSessionLocal, engine, Base
+from database import AsyncSessionLocal, async_engine, Base
 from models import AIConfig, Client, Conversation
 
 async def seed_data():
     # Ensure all tables exist before seeding
     from sqlalchemy.ext.asyncio import create_async_engine as _cae
-    async with engine.begin() as conn:
+    async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    print("✅ Database tables verified.")
+    print("[OK] Database tables verified.")
 
     async with AsyncSessionLocal() as db:
         from sqlalchemy import select
@@ -30,7 +30,7 @@ async def seed_data():
                 ui_density="comfortable"
             )
             db.add(new_config)
-            print("✅ Default config added.")
+            print("[OK] Default config added.")
         else:
             print(f"AI Config already exists: {config.business_name}")
 
@@ -42,7 +42,7 @@ async def seed_data():
             client = Client(name="Cliente de Prueba", phone_number="50612345678")
             db.add(client)
             await db.flush() # Get ID
-            print("✅ Sample client added.")
+            print("[OK] Sample client added.")
         
         # 3. Sample Conversation
         res = await db.execute(select(Conversation).filter(Conversation.client_id == client.id))
@@ -51,10 +51,10 @@ async def seed_data():
             print("Seeding sample conversation...")
             conv = Conversation(client_id=client.id, channel="whatsapp", is_active=True)
             db.add(conv)
-            print("✅ Sample conversation added.")
+            print("[OK] Sample conversation added.")
 
         await db.commit()
-        print("🚀 Seeding completed.")
+        print("Seeding completed.")
 
 if __name__ == "__main__":
     asyncio.run(seed_data())

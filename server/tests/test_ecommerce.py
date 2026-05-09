@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 # Add server to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
 os.environ["TESTING"] = "true"
+os.environ["DEV_MODE"] = "false"
 
 from main import app
 from database import Base, get_async_db
@@ -61,6 +62,12 @@ TestingSessionLocal = async_sessionmaker(
 async def override_get_async_db():
     async with TestingSessionLocal() as session:
         yield session
+
+@pytest.fixture(autouse=True)
+def force_no_dev_mode(monkeypatch):
+    # Ensure DEV_MODE is false so license restrictions are tested
+    monkeypatch.setenv("DEV_MODE", "false")
+    monkeypatch.setenv("TESTING", "true")
 
 @pytest.fixture(autouse=True)
 def setup_db_overrides():
