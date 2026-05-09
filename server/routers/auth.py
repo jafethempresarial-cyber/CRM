@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_async_db
-from models import User, AuditLog
+from models import User, AuditLog, AIConfig
 from services.auth_service import AuthService
 from typing import List, Optional
 import json
@@ -52,9 +52,20 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
         hashed_pw = AuthService.get_password_hash(form_data.password)
         user = User(username=form_data.username, hashed_password=hashed_pw, role="admin")
         db.add(user)
+        
+        # Also Seed Default AI Config to prevent 404s in dashboard
+        new_config = AIConfig(
+            business_name="Enterprise CRM",
+            business_description="Intelligent Sales & Support System",
+            tone="Professional",
+            is_active=True,
+            language_code="en-US"
+        )
+        db.add(new_config)
+        
         await db.commit()
         await db.refresh(user)
-        print(f"ROOT ADMIN CREATED: {form_data.username}")
+        print(f"ROOT ADMIN AND CONFIG CREATED: {form_data.username}")
 
     if not user or not AuthService.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
